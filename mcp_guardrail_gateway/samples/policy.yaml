@@ -1,0 +1,30 @@
+# Sample guardrail policy for the bundled sample server.
+# Exercises every enforcement path: deny-list, arg-guard, rate-limit, redaction.
+version: 1
+mode: enforce
+
+tools:
+  default: allow          # tools not listed are allowed unless denied below
+  deny:
+    - delete_file         # never let the agent delete files
+
+rate_limits:
+  per_tool:
+    add:
+      max_calls: 2        # third add() within the window is rate-limited
+      per_seconds: 60
+
+arg_guards:
+  - id: no-path-traversal
+    applies_to: [read_file]
+    match_args: ["*"]
+    deny_pattern: "\\.\\./"   # block "../" style path traversal
+
+redaction:
+  builtin: true
+  arg_names: [password]       # redact password argument values in the audit log
+  patterns:
+    - "sk-[A-Za-z0-9]{10,}"   # redact sk- style keys in responses
+
+audit:
+  log: null                   # set a path to stream JSONL; null keeps it in-memory

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp-guardrail-gateway"
+version = "0.1.0"
+description = "A policy-enforcing runtime proxy for MCP servers over stdio."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Shriram K Vasudevan" }]
+keywords = ["mcp", "model-context-protocol", "agents", "guardrails", "security", "aaif"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+]
+dependencies = []
+
+[project.optional-dependencies]
+yaml = ["PyYAML>=5.1"]
+
+[project.scripts]
+mcp-guardrail-gateway = "mcp_guardrail_gateway.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["mcp_guardrail_gateway*"]
+
+[tool.setuptools.package-data]
+mcp_guardrail_gateway = ["samples/*.yaml"]
