@@ -27,21 +27,33 @@ class Decision:
 
 
 class _FixedWindow:
-    """A simple fixed-window rate limiter with an injectable clock."""
+    """A simple fixed-window rate limiter with an injectable clock.
+
+    Evaluation is split into ``check`` and ``commit`` so a caller that weighs
+    several windows together can decide before it mutates any of them. A window
+    that is only checked is left untouched.
+    """
 
     def __init__(self, limit: RateLimit):
         self.limit = limit
         self._start = None
         self._count = 0
 
-    def allow(self, now: float) -> bool:
+    def _roll(self, now: float) -> None:
         if self._start is None or (now - self._start) >= self.limit.per_seconds:
             self._start = now
             self._count = 0
-        if self._count >= self.limit.max_calls:
-            return False
+
+    def check(self, now: float) -> bool:
+        """Would a call right now fit inside the window? Mutates nothing."""
+        if self._start is None or (now - self._start) >= self.limit.per_seconds:
+            return True
+        return self._count < self.limit.max_calls
+
+    def commit(self, now: float) -> None:
+        """Record one accepted call, rolling the window over first if stale."""
+        self._roll(now)
         self._count += 1
-        return True
 
 
 class PolicyEngine:
@@ -75,7 +87,8 @@ class PolicyEngine:
         guard_decision = self._check_guards(tool, arguments)
         if guard_decision is not None:
             return guard_decision
-        # 4. Rate limits (checked last so a blocked call does not consume a token).
+        # 4. Rate limits (checked last, and committed only on success, so a
+        #    blocked call does not consume a token in any window).
         rl = self._check_rate(tool, now)
         if rl is not None:
             return rl
@@ -103,11 +116,18 @@ class PolicyEngine:
         return None
 
     def _check_rate(self, tool: str, now: float) -> Optional[Decision]:
-        window = self._per_tool.get(tool)
-        if window is not None and not window.allow(now):
-            return Decision(False, RATE_LIMITED, "per_tool:%s" % tool, "per-tool rate limit exceeded")
-        if self._global is not None and not self._global.allow(now):
+        per_tool = self._per_tool.get(tool)
+        if per_tool is not None and not per_tool.check(now):
+            return Decision(False, RATE_LIMITED, "per_tool:%s" % tool,
+                            "per-tool rate limit exceeded")
+        if self._global is not None and not self._global.check(now):
             return Decision(False, RATE_LIMITED, "global", "global rate limit exceeded")
+        # Commit only after every window has accepted, so a call refused here
+        # spends no token in any of them.
+        if per_tool is not None:
+            per_tool.commit(now)
+        if self._global is not None:
+            self._global.commit(now)
         return None
 
 

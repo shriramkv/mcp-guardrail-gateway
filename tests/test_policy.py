@@ -74,6 +74,29 @@ class DecisionTest(unittest.TestCase):
         self.assertFalse(e.decide("bad", {}, 0.0).allowed)   # denied, no token used
         self.assertTrue(e.decide("good", {}, 0.0).allowed)   # token still available
 
+    def test_blocked_call_does_not_consume_per_tool_token(self):
+        # A call refused by the global window must not spend the per-tool
+        # window's token either. The two windows have deliberately different
+        # lengths so a leaked per-tool token cannot be masked by a reset.
+        e = engine({"rate_limits": {
+            "global": {"max_calls": 1, "per_seconds": 10},
+            "per_tool": {"add": {"max_calls": 2, "per_seconds": 600}}}})
+        self.assertTrue(e.decide("add", {}, 0.0).allowed)    # forwarded
+        self.assertFalse(e.decide("add", {}, 5.0).allowed)   # global window is full
+        self.assertTrue(e.decide("add", {}, 11.0).allowed)   # global rolled over
+
+    def test_block_reason_reports_the_actual_limiter(self):
+        # While the global window is the one that is full, that is the reason
+        # the audit trail must record, however many times the call is retried.
+        e = engine({"rate_limits": {
+            "global": {"max_calls": 1, "per_seconds": 60},
+            "per_tool": {"add": {"max_calls": 2, "per_seconds": 60}}}})
+        e.decide("add", {}, 0.0)
+        for _ in range(2):
+            d = e.decide("add", {}, 0.0)
+            self.assertFalse(d.allowed)
+            self.assertEqual(d.rule, "global")
+
     def test_allow_is_clean(self):
         e = engine({"tools": {"default": "allow"}})
         d = e.decide("echo", {"text": "hi"}, 0.0)
